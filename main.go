@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"strings"
 )
 
 type Post struct {
@@ -20,39 +17,24 @@ type HttpResponse struct {
 }
 
 func main() {
-	const url = "https://httpbin.org/post"
+	res := isPalindrome(10)
+	fmt.Println(res)
+}
 
-	var mockPost = Post{
-		UserID: 1,
-		ID:     1,
-		Title:  "test",
-		Body:   "test123",
+func isPalindrome(x int) bool {
+	result := reverseConcat(strings.Join(strings.Split(string(x), ""), ""))
+	if result == strings.Join(strings.Split(string(x), ""), "") {
+		return true
+	}
+	return false
+}
+
+func reverseConcat(str string) string {
+	var reversed string
+
+	for i := len(str) - 1; i >= 0; i-- {
+		reversed += string(str[i])
 	}
 
-	jsonData, err := json.Marshal(mockPost)
-	if err != nil {
-		fmt.Printf("Error, cant marshal data to json %v", err)
-	}
-
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		fmt.Printf("Error cant request %v", err)
-	}
-
-	responseBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Printf("Ошибка: %v", err)
-	}
-
-	httpResponse := HttpResponse{}
-	err = json.Unmarshal(responseBytes, &httpResponse)
-	if err != nil {
-		fmt.Printf("Не смогли анмаршалить структуру %v", err)
-	}
-
-	if (mockPost.ID == httpResponse.Json.ID) && (mockPost.Body == httpResponse.Json.Body) && (mockPost.Title == httpResponse.Json.Title) && (mockPost.UserID == httpResponse.Json.UserID) {
-		fmt.Print("Success")
-	}
-
-	fmt.Printf("%+v", httpResponse)
+	return reversed
 }
