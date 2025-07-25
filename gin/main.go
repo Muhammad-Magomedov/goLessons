@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -25,12 +26,8 @@ func main() {
 }
 
 func greetUserHandlers(c *gin.Context) {
-	var user Person
-	if err := c.ShouldBindUri(&user); err != nil {
-		c.JSON(400, gin.H{"msg": err.Error()})
-		return
-	}
-	c.JSON(200, gin.H{"user": user.User})
+	name := c.Param("user")
+	c.String(http.StatusOK, "Hello %s", name)
 }
 
 func calcHandlers(c *gin.Context) {
