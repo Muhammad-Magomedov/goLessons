@@ -17,8 +17,28 @@ type HttpResponse struct {
 }
 
 func main() {
-	res := isPalindrome(10)
-	fmt.Println(res)
+	// debil := map[int]int{
+	// 	1: 1,
+	// }
+	// res := isPalindrome(10)
+	// fmt.Println(res)
+	// fmt.Println(debil)
+
+	// nums := []int{2, 7, 11, 15}
+	// target := 9
+	// fmt.Println(twoSum(nums, target))
+
+	// nums = []int{3, 2, 4}
+	// target = 6
+	// fmt.Println(twoSum(nums, target))
+
+	// nums = []int{3, 3}
+	// target = 6
+	// fmt.Println(twoSum(nums, target))
+
+	nums := []int{1, 3, 4, 2}
+	target := 6
+	fmt.Println(twoSum(nums, target))
 }
 
 func isPalindrome(x int) bool {
@@ -37,4 +57,19 @@ func reverseConcat(str string) string {
 	}
 
 	return reversed
+}
+
+func twoSum(nums []int, target int) []int {
+	elementMap := make(map[int]int)
+	for i := 0; i < len(nums); i++ {
+		elementMap[nums[i]] = i
+	}
+	fmt.Println(elementMap)
+	for index, val := range nums {
+		if elementMap[target-val] != 0 && index != elementMap[target-val] {
+			return []int{elementMap[target-val], index}
+		}
+	}
+
+	return nil
 }
