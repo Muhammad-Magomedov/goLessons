@@ -4,14 +4,17 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 )
 
 type Post struct {
-	ID    int    `json:"id"`
-	Title string `json:"title"`
-	Body  string `json:"body"`
+	ID        int       `json:"id"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type UpdatePostRequest struct {
@@ -20,45 +23,24 @@ type UpdatePostRequest struct {
 }
 
 type Handler struct {
-	LastID int
-	Posts  map[int]Post
+	db *pgx.Conn
 }
 
-func (h *Handler) GetPostsHanler(c *gin.Context) {
-	posts := h.Posts
-	if len(posts) == 0 {
-		c.JSON(http.StatusNotFound, "Такого поста нет")
-		return
+func NewHandler(db *pgx.Conn) Handler {
+	return Handler{
+		db: db,
 	}
-
-	c.JSON(http.StatusOK, posts)
 }
 
-func (h *Handler) GetPostByIdHandler(c *gin.Context) {
-	posts := h.Posts
-	if len(posts) == 0 {
-		c.JSON(http.StatusNotFound, "Такого поста нет")
-		return
-	}
-
-	idStr := c.Param("id")
+func checkId(idStr string, c *gin.Context) int {
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, "Невалидный id")
-		log.Println("error in getPostHandler in strconv.Atoi: ", err)
-		return
+		return -1
 	}
-
-	post, ok := h.Posts[id]
-	if !ok {
-		c.JSON(http.StatusNotFound, "Такого поста нет")
-		return
-	}
-
-	c.JSON(http.StatusOK, post)
+	return id
 }
 
-func (h *Handler) CreatePostHandler(c *gin.Context) {
+func (h *Handler) CreatePost(c *gin.Context) {
 	var post Post
 	err := c.BindJSON(&post)
 	if err != nil {
@@ -66,37 +48,85 @@ func (h *Handler) CreatePostHandler(c *gin.Context) {
 		return
 	}
 
-	h.LastID++
-	post.ID = h.LastID
-	h.Posts[h.LastID] = post
+	_, err = h.db.Exec(c, "insert into posts (title, body) values ($1, $2)", post.Title, post.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, "Что-то пошло не так")
+		log.Println("error insert into posts: ", err)
+	}
+
 	c.JSON(http.StatusOK, post)
 }
 
-func (h *Handler) DeletePostHandler(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
+func (h *Handler) GetPosts(c *gin.Context) {
+	posts, err := h.db.Query(c, "select title, body, id from posts")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, "Невалидный id")
-		log.Println("error in getPostHandler in strconv.Atoi: ", err)
+		log.Fatalf("Ошибка запроса: %v", err)
+	}
+
+	defer posts.Close()
+
+	sum := []Post{}
+
+	for posts.Next() {
+		var post Post
+		err = posts.Scan(&post.Title, &post.Body, &post.ID)
+		if err != nil {
+			log.Println("bbbbbbb", err)
+			return
+		}
+		sum = append(sum, post)
+	}
+
+	if posts.Err() != nil {
+		log.Println("aaaaa")
 		return
 	}
 
-	post, ok := h.Posts[id]
-	if !ok {
-		c.JSON(http.StatusNotFound, "Такого поста нет")
-		return
-	}
-
-	delete(h.Posts, post.ID)
-	c.JSON(http.StatusOK, "Пост успешно удален")
+	c.JSON(http.StatusOK, sum)
 }
 
-func (h *Handler) UpdatePostHandler(c *gin.Context) {
+func (h *Handler) GetPostById(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, "Невалидный id")
-		log.Println("error in getPostHandler in strconv.Atoi: ", err)
+		return
+	}
+
+	post := Post{}
+	err = h.db.QueryRow(c, "select * from posts where id=$1", id).Scan(&post.CreatedAt, &post.ID, &post.Body, &post.Title)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, "Пост не найден")
+		return
+	}
+	c.JSON(http.StatusOK, post)
+}
+
+func (h *Handler) DeletePost(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, "Невалидный id")
+		return
+	}
+
+	_, err = h.db.Exec(c, "delete from posts where id=$1", id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, "Не удалось удалить пост")
+		return
+	}
+
+	c.JSON(http.StatusOK, "Запись удалена")
+}
+
+func (h *Handler) UpdatePost(c *gin.Context) {
+	idStr := c.Param("id")
+	id := checkId(idStr, c)
+
+	post := Post{}
+	err := h.db.QueryRow(c, "select * from posts where id=$1", id).Scan(&post.CreatedAt, &post.ID, &post.Body, &post.Title)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, "Пост не найден")
 		return
 	}
 
@@ -107,19 +137,11 @@ func (h *Handler) UpdatePostHandler(c *gin.Context) {
 		return
 	}
 
-	post, ok := h.Posts[id]
-	if !ok {
-		c.JSON(http.StatusNotFound, "Такого поста нет")
+	_, err = h.db.Exec(c, "update posts set title=$1, body=$2 where id=$3", updatePostRequest.Title, updatePostRequest.Body, id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, "Не удалось изменить пост")
 		return
 	}
 
-	if updatePostRequest.Body != nil {
-		post.Body = *updatePostRequest.Body
-	}
-	if updatePostRequest.Title != nil {
-		post.Title = *updatePostRequest.Title
-	}
-	h.Posts[id] = post
-
-	c.JSON(http.StatusOK, h.Posts[id])
+	c.JSON(http.StatusOK, "Запись изменена")
 }
