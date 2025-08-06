@@ -55,8 +55,8 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		return
 	}
 
-	err = h.db.QueryRow(c, "selec short_link from links where short_link=$1", shortLink).Scan()
-	if err == pgx.ErrNoRows {
+	err = h.db.QueryRow(c, "select short_link from links where short_link=$1", shortLink).Scan()
+	if err != pgx.ErrNoRows {
 		c.JSON(http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
