@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"log"
+
 	"url-shortener/handler"
+	"url-shortener/repo"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
@@ -15,15 +17,12 @@ func main() {
 	if err != nil {
 		log.Fatal("Ошибка при подключении к БД: ", err)
 	}
+
+	linksRepository := repo.NewRepository(conn)
+	linksHandler := handler.NewHandler(linksRepository)
+
 	r := gin.Default()
-
-	linksHandler := handler.NewHandler(conn)
-
 	r.POST("/shorten", linksHandler.CreateLink)
 	r.GET("/:path", linksHandler.Redirect)
-	// r.GET("/posts/:id", postsHandler.GetPostById)
-	// r.DELETE("/posts/:id", postsHandler.DeletePost)
-	// r.PATCH("/posts/:id", postsHandler.UpdatePost)
-
-	r.Run(":8085")
+	r.Run(":8080")
 }

@@ -4,16 +4,18 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log"
 	"net/http"
+	"url-shortener/repo"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 )
 
-const HostURL = "127.0.0.1:8085/"
+const HostURL = "127.0.0.1:8080/"
 
 type Handler struct {
-	db *pgx.Conn
+	LinksRepository *repo.Repository
 }
 
 type CreateLinkRequest struct {
@@ -25,9 +27,9 @@ type LinkResponse struct {
 	ShortLink string `json:"short_link"`
 }
 
-func NewHandler(db *pgx.Conn) Handler {
+func NewHandler(linksRepo *repo.Repository) Handler {
 	return Handler{
-		db: db,
+		LinksRepository: linksRepo,
 	}
 }
 
@@ -39,31 +41,41 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		return
 	}
 
-	b := make([]byte, 6)
-	rand.Read(b)
-	shortLink := base64.URLEncoding.EncodeToString(b)[:6]
-	longLink := LinkResponse{}
-	err = h.db.QueryRow(c, "SELECT long_link, short_link FROM links WHERE long_link=$1", req.Link).Scan(&longLink.LongLink, &longLink.ShortLink)
+	existingShortLink, err := h.LinksRepository.GetShortByLong(c, req.Link)
 	if err == nil {
 		c.JSON(http.StatusOK, gin.H{
-			"short": longLink.ShortLink,
-			"long":  longLink.LongLink,
+			"short": HostURL + existingShortLink,
+			"long":  req.Link,
 		})
 		return
-	} else if err != pgx.ErrNoRows {
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		log.Println("Ошибка БД: ", err)
 		c.JSON(http.StatusInternalServerError, "Ошибка базы данных")
 		return
 	}
 
-	err = h.db.QueryRow(c, "select short_link from links where short_link=$1", shortLink).Scan()
-	if err != pgx.ErrNoRows {
-		c.JSON(http.StatusInternalServerError, "Ошибка базы данных")
-		return
+	shortLink := ""
+	for {
+		b := make([]byte, 6)
+		rand.Read(b)
+		shortLink = base64.URLEncoding.EncodeToString(b)[:6]
+
+		isExists, err := h.LinksRepository.IsShortExists(c, shortLink)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, "Произошла ошибка БД, попробуйте позже")
+			return
+		}
+
+		if !isExists {
+			break
+		}
 	}
 
-	_, err = h.db.Exec(c, "insert into links (long_link, short_link) VALUES ($1, $2)", req.Link, shortLink)
+	err = h.LinksRepository.CreateLink(c, req.Link, shortLink)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -74,10 +86,8 @@ func (h *Handler) CreateLink(c *gin.Context) {
 
 func (h *Handler) Redirect(c *gin.Context) {
 	shortLink := c.Param("path")
-	var longLink string
 
-	row := h.db.QueryRow(c, "select long_link from links where short_link=$1", shortLink)
-	err := row.Scan(&longLink)
+	row, err := h.LinksRepository.Redirect(c, shortLink)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusNotFound, "Ссылка не найдена")
@@ -87,5 +97,5 @@ func (h *Handler) Redirect(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusTemporaryRedirect, longLink)
+	c.Redirect(http.StatusTemporaryRedirect, row)
 }
