@@ -19,7 +19,8 @@ type Handler struct {
 }
 
 type CreateLinkRequest struct {
-	Link string `json:"link"`
+	Link       string  `json:"link"`
+	CustomLink *string `json:"custom_link"`
 }
 
 type LinkResponse struct {
@@ -72,14 +73,38 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		}
 	}
 
-	err = h.LinksRepository.CreateLink(c, req.Link, shortLink)
+	var customLink string
+
+	isExists, err := h.LinksRepository.IsCustomLinkExists(c, *req.CustomLink)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, "Произошла ошибка БД, попробуйте позже")
+		return
+	}
+
+	if isExists {
+		c.JSON(http.StatusBadRequest, "Такая ссылка уже существует")
+		return
+	}
+
+	if req.CustomLink != nil {
+		if len(*req.CustomLink) >= 3 {
+			customLink = *req.CustomLink
+		} else {
+			c.JSON(http.StatusBadRequest, "Длина ссылки должна быть больше 2 символов")
+			return
+		}
+	} else {
+		customLink = shortLink
+	}
+
+	err = h.LinksRepository.CreateLink(c, req.Link, customLink)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"short": HostURL + shortLink,
+		"short": HostURL + customLink,
 		"long":  req.Link,
 	})
 }
@@ -87,7 +112,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 func (h *Handler) Redirect(c *gin.Context) {
 	shortLink := c.Param("path")
 
-	row, err := h.LinksRepository.Redirect(c, shortLink)
+	longLink, err := h.LinksRepository.GetLongByShort(c, shortLink)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusNotFound, "Ссылка не найдена")
@@ -97,5 +122,30 @@ func (h *Handler) Redirect(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusTemporaryRedirect, row)
+	err = h.LinksRepository.StoreRedirect(c, repo.StoreRedirectParams{
+		UserAgent: c.GetHeader("User-Agent"),
+		ShortLink: shortLink,
+		LongLink:  longLink,
+	})
+	if err != nil {
+		log.Printf("Ошибка при StoreRedirect: %v", err)
+	}
+
+	c.Redirect(http.StatusTemporaryRedirect, longLink)
+}
+
+func (h *Handler) GetAnalytics(c *gin.Context) {
+	shortLink := c.Param("path")
+
+	redirects, err := h.LinksRepository.GetRedirectsByShortLink(c, shortLink)
+	if err != nil {
+		log.Println("GetAnalytics", err)
+		c.JSON(http.StatusInternalServerError, "Не удалось получить аналитику")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_redirects": len(redirects),
+		"redirects":       redirects,
+	})
 }
