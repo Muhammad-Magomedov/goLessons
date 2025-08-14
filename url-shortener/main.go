@@ -24,5 +24,6 @@ func main() {
 	r := gin.Default()
 	r.POST("/shorten", linksHandler.CreateLink)
 	r.GET("/:path", linksHandler.Redirect)
+	r.GET("/analytics/:path", linksHandler.GetAnalytics)
 	r.Run(":8080")
 }
