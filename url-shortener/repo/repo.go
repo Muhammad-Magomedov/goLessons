@@ -75,19 +75,6 @@ func (r *Repository) IsShortExists(c *gin.Context, shortLink string) (bool, erro
 	return true, nil
 }
 
-func (r *Repository) IsCustomLinkExists(c *gin.Context, customLink string) (bool, error) {
-	existingCustomLink := ""
-	err := r.db.QueryRow(c, "select short_link from links where short_link=$1", customLink).Scan(&existingCustomLink)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return true, nil
-}
-
 func (r *Repository) Redirect(c *gin.Context, shortLink string) (string, error) {
 	var longLink string
 	err := r.db.QueryRow(c, "select long_link from links where short_link=$1", shortLink).Scan(&longLink)

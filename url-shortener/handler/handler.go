@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"unicode"
 	"url-shortener/repo"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +14,8 @@ import (
 )
 
 const HostURL = "127.0.0.1:8080/"
+const MaxLinkLength = 6
+const MinLinkLength = 3
 
 type Handler struct {
 	LinksRepository *repo.Repository
@@ -56,11 +59,47 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		return
 	}
 
+	if req.CustomLink != nil {
+		customLink := *req.CustomLink
+
+		err := validateShortLink(customLink)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Невалидная кастомная ссылка. Длина должна быть 6 символов. Символы могут быть цифрами и английскими буквами"})
+			return
+		}
+
+		isExists, err := h.LinksRepository.IsShortExists(c, customLink)
+		if err != nil {
+			log.Printf("error IsShortExists: %w", err)
+			c.JSON(http.StatusInternalServerError, "Произошла ошибка БД, попробуйте позже")
+			return
+		}
+
+		if isExists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Такая ссылка занята. Попробуйте другую"})
+		}
+
+		err = h.LinksRepository.CreateLink(c, req.Link, customLink)
+		if err != nil {
+			log.Printf("error CreateLink: %w", err)
+			c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"short": HostURL + customLink,
+			"long":  req.Link,
+		})
+		return
+
+	}
+
 	shortLink := ""
+
 	for {
-		b := make([]byte, 6)
+		b := make([]byte, MaxLinkLength)
 		rand.Read(b)
-		shortLink = base64.URLEncoding.EncodeToString(b)[:6]
+		shortLink = base64.URLEncoding.EncodeToString(b)[:MaxLinkLength]
 
 		isExists, err := h.LinksRepository.IsShortExists(c, shortLink)
 		if err != nil {
@@ -73,38 +112,14 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		}
 	}
 
-	var customLink string
-
-	isExists, err := h.LinksRepository.IsCustomLinkExists(c, *req.CustomLink)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, "Произошла ошибка БД, попробуйте позже")
-		return
-	}
-
-	if isExists {
-		c.JSON(http.StatusBadRequest, "Такая ссылка уже существует")
-		return
-	}
-
-	if req.CustomLink != nil {
-		if len(*req.CustomLink) >= 3 {
-			customLink = *req.CustomLink
-		} else {
-			c.JSON(http.StatusBadRequest, "Длина ссылки должна быть больше 2 символов")
-			return
-		}
-	} else {
-		customLink = shortLink
-	}
-
-	err = h.LinksRepository.CreateLink(c, req.Link, customLink)
+	err = h.LinksRepository.CreateLink(c, req.Link, shortLink)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"short": HostURL + customLink,
+		"short": HostURL + shortLink,
 		"long":  req.Link,
 	})
 }
@@ -148,4 +163,18 @@ func (h *Handler) GetAnalytics(c *gin.Context) {
 		"total_redirects": len(redirects),
 		"redirects":       redirects,
 	})
+}
+
+func validateShortLink(link string) error {
+	if len(link) < MinLinkLength {
+		return errors.New("error, link too short")
+	}
+
+	for _, r := range link {
+		if unicode.IsLetter(r) && unicode.IsDigit(r) {
+			return errors.New("error invalid symbol in link")
+		}
+	}
+
+	return nil
 }
