@@ -77,6 +77,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 
 		if isExists {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Такая ссылка занята. Попробуйте другую"})
+			return
 		}
 
 		err = h.LinksRepository.CreateLink(c, req.Link, customLink)
@@ -171,7 +172,7 @@ func validateShortLink(link string) error {
 	}
 
 	for _, r := range link {
-		if unicode.IsLetter(r) && unicode.IsDigit(r) {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 			return errors.New("error invalid symbol in link")
 		}
 	}
