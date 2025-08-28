@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"unicode"
 	"url-shortener/repo"
 
 	"github.com/gin-gonic/gin"
@@ -13,13 +14,16 @@ import (
 )
 
 const HostURL = "127.0.0.1:8080/"
+const MaxLinkLength = 6
+const MinLinkLength = 3
 
 type Handler struct {
 	LinksRepository *repo.Repository
 }
 
 type CreateLinkRequest struct {
-	Link string `json:"link"`
+	Link       string  `json:"link"`
+	CustomLink *string `json:"custom_link"`
 }
 
 type LinkResponse struct {
@@ -55,11 +59,48 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		return
 	}
 
+	if req.CustomLink != nil {
+		customLink := *req.CustomLink
+
+		err := validateShortLink(customLink)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Невалидная кастомная ссылка. Длина должна быть 6 символов. Символы могут быть цифрами и английскими буквами"})
+			return
+		}
+
+		isExists, err := h.LinksRepository.IsShortExists(c, customLink)
+		if err != nil {
+			log.Printf("error IsShortExists: %w", err)
+			c.JSON(http.StatusInternalServerError, "Произошла ошибка БД, попробуйте позже")
+			return
+		}
+
+		if isExists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Такая ссылка занята. Попробуйте другую"})
+			return
+		}
+
+		err = h.LinksRepository.CreateLink(c, req.Link, customLink)
+		if err != nil {
+			log.Printf("error CreateLink: %w", err)
+			c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"short": HostURL + customLink,
+			"long":  req.Link,
+		})
+		return
+
+	}
+
 	shortLink := ""
+
 	for {
-		b := make([]byte, 6)
+		b := make([]byte, MaxLinkLength)
 		rand.Read(b)
-		shortLink = base64.URLEncoding.EncodeToString(b)[:6]
+		shortLink = base64.URLEncoding.EncodeToString(b)[:MaxLinkLength]
 
 		isExists, err := h.LinksRepository.IsShortExists(c, shortLink)
 		if err != nil {
@@ -87,7 +128,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 func (h *Handler) Redirect(c *gin.Context) {
 	shortLink := c.Param("path")
 
-	row, err := h.LinksRepository.Redirect(c, shortLink)
+	longLink, err := h.LinksRepository.GetLongByShort(c, shortLink)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusNotFound, "Ссылка не найдена")
@@ -97,5 +138,44 @@ func (h *Handler) Redirect(c *gin.Context) {
 		return
 	}
 
-	c.Redirect(http.StatusTemporaryRedirect, row)
+	err = h.LinksRepository.StoreRedirect(c, repo.StoreRedirectParams{
+		UserAgent: c.GetHeader("User-Agent"),
+		ShortLink: shortLink,
+		LongLink:  longLink,
+	})
+	if err != nil {
+		log.Printf("Ошибка при StoreRedirect: %v", err)
+	}
+
+	c.Redirect(http.StatusTemporaryRedirect, longLink)
+}
+
+func (h *Handler) GetAnalytics(c *gin.Context) {
+	shortLink := c.Param("path")
+
+	redirects, err := h.LinksRepository.GetRedirectsByShortLink(c, shortLink)
+	if err != nil {
+		log.Println("GetAnalytics", err)
+		c.JSON(http.StatusInternalServerError, "Не удалось получить аналитику")
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total_redirects": len(redirects),
+		"redirects":       redirects,
+	})
+}
+
+func validateShortLink(link string) error {
+	if len(link) < MinLinkLength {
+		return errors.New("error, link too short")
+	}
+
+	for _, r := range link {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			return errors.New("error invalid symbol in link")
+		}
+	}
+
+	return nil
 }
