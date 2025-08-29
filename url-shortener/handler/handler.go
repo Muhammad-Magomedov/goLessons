@@ -6,7 +6,10 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"time"
 	"unicode"
+	"url-shortener/cache"
+	"url-shortener/manager"
 	"url-shortener/repo"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +22,8 @@ const MinLinkLength = 3
 
 type Handler struct {
 	LinksRepository *repo.Repository
+	LinksCache      *cache.LinksCache
+	LinksManager    *manager.Manager
 }
 
 type CreateLinkRequest struct {
@@ -31,9 +36,10 @@ type LinkResponse struct {
 	ShortLink string `json:"short_link"`
 }
 
-func NewHandler(linksRepo *repo.Repository) Handler {
+func NewHandler(linksRepo *repo.Repository, linksCache *cache.LinksCache) Handler {
 	return Handler{
 		LinksRepository: linksRepo,
+		LinksCache:      linksCache,
 	}
 }
 
@@ -128,14 +134,25 @@ func (h *Handler) CreateLink(c *gin.Context) {
 func (h *Handler) Redirect(c *gin.Context) {
 	shortLink := c.Param("path")
 
+	start := time.Now()
 	longLink, err := h.LinksRepository.GetLongByShort(c, shortLink)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			c.JSON(http.StatusNotFound, "Ссылка не найдена")
-			return
+		log.Printf("error LinksCache.GetLink: ", err)
+	}
+
+	if longLink == "" {
+		longLink, err = h.LinksRepository.GetLongByShort(c, shortLink)
+		log.Println("vid db: ", time.Since(start))
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				c.JSON(http.StatusNotFound, "Ссылка не найдена")
+				return
+			}
+			log.Println("error GetLongByShort: ", err)
+			c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
 		}
-		c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
-		return
+	} else {
+		log.Println("via cache: ", time.Since(start))
 	}
 
 	err = h.LinksRepository.StoreRedirect(c, repo.StoreRedirectParams{
