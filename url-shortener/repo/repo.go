@@ -69,6 +69,18 @@ func (r *Repository) GetShortByLong(c *gin.Context, longLink string) (string, er
 	return shortLink, err
 }
 
+func (r *Repository) RemoveLink(c *gin.Context, shortLink string) (string, error) {
+	_, err := r.db.Exec(c, "delete from links where short_link=$1", shortLink)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "Такой ссылки нет", nil
+		}
+		return "Возникла ошибка", err
+	}
+
+	return "Ссылка удалена", nil
+}
+
 func (r *Repository) IsShortExists(c *gin.Context, shortLink string) (bool, error) {
 	existingShortLink := ""
 	err := r.db.QueryRow(c, "select short_link from links where short_link=$1", shortLink).Scan(&existingShortLink)

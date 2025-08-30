@@ -21,9 +21,8 @@ const MaxLinkLength = 6
 const MinLinkLength = 3
 
 type Handler struct {
-	LinksRepository *repo.Repository
-	LinksCache      *cache.LinksCache
-	LinksManager    *manager.Manager
+	LinksCache   *cache.LinksCache
+	LinksManager *manager.Manager
 }
 
 type CreateLinkRequest struct {
@@ -36,10 +35,10 @@ type LinkResponse struct {
 	ShortLink string `json:"short_link"`
 }
 
-func NewHandler(linksRepo *repo.Repository, linksCache *cache.LinksCache) Handler {
+func NewHandler(linksCache *cache.LinksCache, linksManager *manager.Manager) Handler {
 	return Handler{
-		LinksRepository: linksRepo,
-		LinksCache:      linksCache,
+		LinksCache:   linksCache,
+		LinksManager: linksManager,
 	}
 }
 
@@ -51,7 +50,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		return
 	}
 
-	existingShortLink, err := h.LinksRepository.GetShortByLong(c, req.Link)
+	existingShortLink, err := h.LinksManager.GetShortByLong(c, req.Link)
 	if err == nil {
 		c.JSON(http.StatusOK, gin.H{
 			"short": HostURL + existingShortLink,
@@ -74,7 +73,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 			return
 		}
 
-		isExists, err := h.LinksRepository.IsShortExists(c, customLink)
+		isExists, err := h.LinksManager.IsShortExists(c, customLink)
 		if err != nil {
 			log.Printf("error IsShortExists: %w", err)
 			c.JSON(http.StatusInternalServerError, "Произошла ошибка БД, попробуйте позже")
@@ -86,7 +85,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 			return
 		}
 
-		err = h.LinksRepository.CreateLink(c, req.Link, customLink)
+		err = h.LinksManager.CreateLink(c, req.Link, customLink)
 		if err != nil {
 			log.Printf("error CreateLink: %w", err)
 			c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
@@ -108,7 +107,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		rand.Read(b)
 		shortLink = base64.URLEncoding.EncodeToString(b)[:MaxLinkLength]
 
-		isExists, err := h.LinksRepository.IsShortExists(c, shortLink)
+		isExists, err := h.LinksManager.IsShortExists(c, shortLink)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, "Произошла ошибка БД, попробуйте позже")
 			return
@@ -119,7 +118,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 		}
 	}
 
-	err = h.LinksRepository.CreateLink(c, req.Link, shortLink)
+	err = h.LinksManager.CreateLink(c, req.Link, shortLink)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
 		return
@@ -135,13 +134,13 @@ func (h *Handler) Redirect(c *gin.Context) {
 	shortLink := c.Param("path")
 
 	start := time.Now()
-	longLink, err := h.LinksRepository.GetLongByShort(c, shortLink)
+	longLink, err := h.LinksManager.GetLongByShort(c, shortLink)
 	if err != nil {
 		log.Printf("error LinksCache.GetLink: ", err)
 	}
 
 	if longLink == "" {
-		longLink, err = h.LinksRepository.GetLongByShort(c, shortLink)
+		longLink, err = h.LinksManager.GetLongByShort(c, shortLink)
 		log.Println("vid db: ", time.Since(start))
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -155,7 +154,7 @@ func (h *Handler) Redirect(c *gin.Context) {
 		log.Println("via cache: ", time.Since(start))
 	}
 
-	err = h.LinksRepository.StoreRedirect(c, repo.StoreRedirectParams{
+	err = h.LinksManager.StoreRedirect(c, repo.StoreRedirectParams{
 		UserAgent: c.GetHeader("User-Agent"),
 		ShortLink: shortLink,
 		LongLink:  longLink,
@@ -170,7 +169,7 @@ func (h *Handler) Redirect(c *gin.Context) {
 func (h *Handler) GetAnalytics(c *gin.Context) {
 	shortLink := c.Param("path")
 
-	redirects, err := h.LinksRepository.GetRedirectsByShortLink(c, shortLink)
+	redirects, err := h.LinksManager.GetRedirectsByShortLink(c, shortLink)
 	if err != nil {
 		log.Println("GetAnalytics", err)
 		c.JSON(http.StatusInternalServerError, "Не удалось получить аналитику")
@@ -195,4 +194,17 @@ func validateShortLink(link string) error {
 	}
 
 	return nil
+}
+
+func (h *Handler) RemoveLink(c *gin.Context) {
+	shortLink := c.Param("short")
+
+	result, err := h.LinksManager.RemoveLink(c, shortLink)
+	if err != nil {
+		log.Println("RemoveLink: ", err)
+		c.JSON(http.StatusBadRequest, result)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"response": result})
 }

@@ -38,8 +38,8 @@ func main() {
 
 	linksRepository := repo.NewRepository(conn)
 	linksCache := cache.New(rdb)
-	linksHandler := handler.NewHandler(linksRepository, linksCache)
 	linksManager := manager.ManagerHandler(linksRepository, linksCache)
+	linksHandler := handler.NewHandler(linksCache, &linksManager)
 
 	go func() {
 		err := linksManager.CachePopularLinks(linksRepository, linksCache)
@@ -70,5 +70,6 @@ func main() {
 	r.POST("/shorten", linksHandler.CreateLink)
 	r.GET("/:path", linksHandler.Redirect)
 	r.GET("/analytics/:path", linksHandler.GetAnalytics)
+	r.DELETE("/:short", linksHandler.RemoveLink)
 	r.Run(":8080")
 }
