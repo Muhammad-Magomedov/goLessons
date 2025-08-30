@@ -38,8 +38,8 @@ func main() {
 
 	linksRepository := repo.NewRepository(conn)
 	linksCache := cache.New(rdb)
-	linksManager := manager.ManagerHandler(linksRepository, linksCache)
-	linksHandler := handler.NewHandler(linksCache, &linksManager)
+	linksManager := manager.New(linksRepository, linksCache)
+	linksHandler := handler.NewHandler(&linksManager)
 
 	go func() {
 		err := linksManager.CachePopularLinks(linksRepository, linksCache)

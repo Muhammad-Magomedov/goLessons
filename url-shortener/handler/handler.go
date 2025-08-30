@@ -6,9 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"time"
 	"unicode"
-	"url-shortener/cache"
 	"url-shortener/manager"
 	"url-shortener/repo"
 
@@ -21,7 +19,6 @@ const MaxLinkLength = 6
 const MinLinkLength = 3
 
 type Handler struct {
-	LinksCache   *cache.LinksCache
 	LinksManager *manager.Manager
 }
 
@@ -35,9 +32,8 @@ type LinkResponse struct {
 	ShortLink string `json:"short_link"`
 }
 
-func NewHandler(linksCache *cache.LinksCache, linksManager *manager.Manager) Handler {
+func NewHandler(linksManager *manager.Manager) Handler {
 	return Handler{
-		LinksCache:   linksCache,
 		LinksManager: linksManager,
 	}
 }
@@ -133,26 +129,7 @@ func (h *Handler) CreateLink(c *gin.Context) {
 func (h *Handler) Redirect(c *gin.Context) {
 	shortLink := c.Param("path")
 
-	start := time.Now()
-	longLink, err := h.LinksManager.GetLongByShort(c, shortLink)
-	if err != nil {
-		log.Printf("error LinksCache.GetLink: ", err)
-	}
-
-	if longLink == "" {
-		longLink, err = h.LinksManager.GetLongByShort(c, shortLink)
-		log.Println("vid db: ", time.Since(start))
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				c.JSON(http.StatusNotFound, "Ссылка не найдена")
-				return
-			}
-			log.Println("error GetLongByShort: ", err)
-			c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
-		}
-	} else {
-		log.Println("via cache: ", time.Since(start))
-	}
+	longLink, err := h.LinksManager.FindLink(shortLink, c)
 
 	err = h.LinksManager.StoreRedirect(c, repo.StoreRedirectParams{
 		UserAgent: c.GetHeader("User-Agent"),
