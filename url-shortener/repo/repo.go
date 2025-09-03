@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -21,6 +23,11 @@ type Redirect struct {
 	ShortLink string
 	UserAgent string
 	CreatedAt time.Time
+}
+
+type LinkPair struct {
+	Short string
+	Long  string
 }
 
 type Repository struct {
@@ -60,6 +67,18 @@ func (r *Repository) GetShortByLong(c *gin.Context, longLink string) (string, er
 	}
 
 	return shortLink, err
+}
+
+func (r *Repository) RemoveLink(c *gin.Context, shortLink string) (string, error) {
+	_, err := r.db.Exec(c, "delete from links where short_link=$1", shortLink)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "Такой ссылки нет", nil
+		}
+		return "Возникла ошибка", err
+	}
+
+	return "Ссылка удалена", nil
 }
 
 func (r *Repository) IsShortExists(c *gin.Context, shortLink string) (bool, error) {
@@ -106,6 +125,37 @@ func (r *Repository) GetRedirectsByShortLink(c *gin.Context, shortLink string) (
 			return nil, err
 		}
 		res = append(res, redirect)
+	}
+
+	return res, nil
+}
+
+func (r *Repository) GetPopularLinks(ctx context.Context, n int) ([]LinkPair, error) {
+	rows, err := r.db.Query(
+		ctx,
+		`select
+				short_link,
+				long_link
+			from redirects
+		group by short_link, long_link
+		order by count(id) desc
+			limit $1;
+		`,
+		n,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error GetPopularLinks: %w", err)
+	}
+
+	res := make([]LinkPair, 0, n)
+
+	for rows.Next() {
+		linkPair := LinkPair{}
+		err := rows.Scan(&linkPair.Short, &linkPair.Long)
+		if err != nil {
+			return nil, fmt.Errorf("error GetPopularLinks Scan: %w", err)
+		}
+		res = append(res, linkPair)
 	}
 
 	return res, nil
