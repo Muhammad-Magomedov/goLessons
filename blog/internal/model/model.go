@@ -2,36 +2,36 @@ package model
 
 import "time"
 
-type CreateLinkRequest struct {
-	Link            string  `json:"link"`
-	CustomShortLink *string `json:"custom_short_link"`
-}
-
-type LinkResponse struct {
-	LongLink  string `json:"long_link"`
-	ShortLink string `json:"short_link"`
-}
-
-type AnalyticsResponse struct {
-	TotalRedirects int        `json:"total_redirects"`
-	Redirects      []Redirect `json:"redirects"`
-}
-
-type StoreRedirectParams struct {
-	UserAgent string
-	LongLink  string
-	ShortLink string
-}
-
-type Redirect struct {
+type User struct {
 	Id        int       `json:"id"`
-	LongLink  string    `json:"long_link"`
-	ShortLink string    `json:"short_link"`
-	UserAgent string    `json:"user_agent"`
+	Name      string    `json:"name"`
+	Email     string    `json:"email"`
+	IsAdmin   bool      `json:"is_admin"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-type LinkPair struct {
-	Short string
-	Long  string
+type Comment struct {
+	Id        int       `json:"id"`
+	UserId    int       `json:"user_id"`
+	PostId    int       `json:"post_id"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type Post struct {
+	Id        int       `json:"id"`
+	UserId    int       `json:"user_id"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	Views     int       `json:"views"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type CreateUserReq struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
+	Email    string `json:"email"`
 }

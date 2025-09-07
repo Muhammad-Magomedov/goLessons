@@ -2,62 +2,27 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
-	"github.com/Muhammad-Magomedov/blog/internal/cache"
 	"github.com/Muhammad-Magomedov/blog/internal/handler"
-	"github.com/Muhammad-Magomedov/blog/internal/manager"
 	"github.com/Muhammad-Magomedov/blog/internal/repo"
 	"github.com/Muhammad-Magomedov/blog/internal/service"
-
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/go-redis/redis"
 	"github.com/jackc/pgx/v5"
 )
 
-const cacheLinksInterval = time.Hour
-
 func main() {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-
-	_, err := rdb.Ping().Result()
-	if err != nil {
-		log.Fatalf("Ошибка подключения к Redis: %v", err)
-	}
-
-	connString := "postgres://postgres:postgres@localhost:5432/shortener-db"
+	connString := "postgres://postgres:postgres@localhost:5432/postgres"
 	conn, err := pgx.Connect(context.Background(), connString)
 	if err != nil {
 		log.Fatal("Ошибка при подключении к БД: ", err)
 	}
 
-	linksRepository := repo.New(conn)
-	linksCache := cache.New(rdb)
-	linksManager := manager.New(*linksCache, *linksRepository)
-	linksService := service.New(*linksManager)
-	linksHandler := handler.New(*linksManager, *linksService)
-
-	go func() {
-		err := cachePopularLinks(linksRepository, linksCache)
-		if err != nil {
-			log.Println(err)
-		}
-
-		c := time.Tick(cacheLinksInterval)
-		for range c {
-			err := cachePopularLinks(linksRepository, linksCache)
-			if err != nil {
-				log.Println(err)
-			}
-		}
-	}()
+	blogRepository := repo.New(conn)
+	blogService := service.New(*blogRepository)
+	blogHandler := handler.New(*blogService)
 
 	r := gin.Default()
 
@@ -70,24 +35,8 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	r.POST("/shorten", linksHandler.CreateLink)
-	r.GET("/analytics/:path", linksHandler.GetAnalytics)
-	r.GET("/:path", linksHandler.Redirect)
+	r.GET("/user/:id", blogHandler.GetUser)
+	r.POST("/user", blogHandler.CreateUser)
+	r.GET("/users", blogHandler.GetUsers)
 	r.Run(":8080")
-}
-
-func cachePopularLinks(linksRepository *repo.Repository, linksCache *cache.LinksCache) error { // TODO: вынести из main.go в другое место
-	links, err := linksRepository.GetPopularLinks(context.Background(), 10)
-	if err != nil {
-		return fmt.Errorf("error updateCache GetPopularLinks: %w", err)
-	}
-
-	for _, link := range links {
-		err := linksCache.StoreLink(link.Short, link.Long)
-		if err != nil {
-			return fmt.Errorf("error updateCache StoreLink: %w", err)
-		}
-	}
-
-	return nil
 }

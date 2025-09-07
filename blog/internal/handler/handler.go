@@ -1,97 +1,71 @@
 package handler
 
 import (
-	"errors"
 	"log"
 	"net/http"
-	"url-shortener/manager"
-	"url-shortener/model"
-	"url-shortener/service"
+	"strconv"
 
+	"github.com/Muhammad-Magomedov/blog/internal/model"
+	"github.com/Muhammad-Magomedov/blog/internal/service"
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	HostURL = "127.0.0.1:8080/"
-)
-
 type Handler struct {
-	linksManager manager.LinksManager
-	linksService service.LinksService
+	service service.BlogService
 }
 
-func New(linksManager manager.LinksManager, linksService service.LinksService) Handler {
+func New(service service.BlogService) Handler {
 	return Handler{
-		linksManager: linksManager,
-		linksService: linksService,
+		service: service,
 	}
 }
 
-func (h *Handler) CreateLink(c *gin.Context) {
-	var req model.CreateLinkRequest
+func (h *Handler) CreateUser(c *gin.Context) {
+	var req model.CreateUserReq
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, "У вас невалидный запрос")
 		return
 	}
 
-	shortLink, err := h.linksService.CreateShortLink(c, req.Link, req.CustomShortLink)
+	err = h.service.CreateUser(c, req)
 	if err != nil {
-		if errors.Is(err, service.ErrorLinkAlreadyExists) ||
-			errors.Is(err, service.ErrorLinkTooShort) ||
-			errors.Is(err, service.ErrorInvalidSymbolInLink) {
-			c.JSON(http.StatusBadRequest, err)
-			return
-		}
-
-		log.Printf("error linksService.CreateShortLink: %v", err)
-		c.JSON(http.StatusInternalServerError, "Ошибка! Попробуйте позже")
+		log.Println("create user handler: %w", err)
+		c.JSON(http.StatusInternalServerError, "Попробуйте позже")
 	}
 
-	c.JSON(http.StatusOK, model.LinkResponse{
-		ShortLink: HostURL + shortLink,
-		LongLink:  req.Link,
-	})
+	c.Status(http.StatusOK)
 }
 
-func (h *Handler) Redirect(c *gin.Context) {
-	shortLink := c.Param("path")
-
-	longLink, err := h.linksManager.GetLongByShort(c, shortLink)
+func (h *Handler) GetUser(c *gin.Context) {
+	stringId := c.Param("id")
+	id, err := strconv.Atoi(stringId)
 	if err != nil {
-		if errors.Is(err, errors.New("error link not found")) {
-			c.JSON(http.StatusNotFound, "Ссылка не найдена")
-			return
-		}
-		log.Println("error linksManager.GetLongByShort: ", err)
-		c.JSON(http.StatusInternalServerError, "Произошла ошибка, попробуйте позже")
+		log.Println("Error in GetUser handler: %w", err)
+		c.JSON(http.StatusBadRequest, "Невалидные данные, пользователь не найден")
 		return
 	}
 
-	err = h.linksManager.StoreRedirect(c, model.StoreRedirectParams{
-		UserAgent: c.GetHeader("User-Agent"),
-		LongLink:  longLink,
-		ShortLink: shortLink,
-	})
+	user, err := h.service.GetUser(c, id)
 	if err != nil {
-		log.Printf("Ошибка при StoreRedirect: %v", err)
-	}
-
-	c.Redirect(http.StatusTemporaryRedirect, longLink)
-}
-
-func (h *Handler) GetAnalytics(c *gin.Context) {
-	shortLink := c.Param("path")
-
-	redirects, err := h.linksManager.GetRedirectsByShortLink(c, shortLink)
-	if err != nil {
-		log.Printf("error GetRedirectsByShortLink: %v\n", err)
-		c.JSON(http.StatusInternalServerError, "Не удалось получить аналитику")
+		c.JSON(http.StatusBadRequest, "Такой пользователь не найден")
 		return
 	}
 
-	c.JSON(http.StatusOK, model.AnalyticsResponse{
-		TotalRedirects: len(redirects),
-		Redirects:      redirects,
+	c.JSON(http.StatusOK, gin.H{
+		"name":     user.Name,
+		"is_admin": user.IsAdmin,
+		"email":    user.Email,
 	})
+}
+
+func (h *Handler) GetUsers(c *gin.Context) {
+	users, err := h.service.GetUsers(c)
+	if err != nil {
+		log.Println("get users handler: %w", err)
+		c.JSON(http.StatusInternalServerError, "Не удалось получить пользователей")
+		return
+	}
+
+	c.JSON(http.StatusOK, users)
 }
