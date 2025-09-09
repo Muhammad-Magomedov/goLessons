@@ -37,6 +37,33 @@ func (b *BlogService) CreateUser(ctx context.Context, user model.CreateUserReq) 
 	return nil
 }
 
+func (b *BlogService) CreatePost(ctx context.Context, userId int, post model.CreatePostReq) error {
+	err := b.blogManager.CreatePost(ctx, repo.CreatePost{
+		UserId: userId,
+		Title:  post.Title,
+		Body:   post.Body,
+	})
+	if err != nil {
+		return fmt.Errorf("error repo.CreatePost: %w", err)
+	}
+
+	return nil
+}
+
+func (b *BlogService) CreateComment(ctx context.Context, userId int, postId int, comment model.CreateCommentReq) error {
+	err := b.blogManager.CreateComment(ctx, repo.CreateComment{
+		UserId: userId,
+		PostId: postId,
+		Body:   comment.Body,
+	})
+
+	if err != nil {
+		return fmt.Errorf("error repo.CreateComment: %w", err)
+	}
+
+	return nil
+}
+
 func (b *BlogService) GetUser(ctx context.Context, id int) (model.User, error) {
 	user, err := b.blogManager.GetUser(ctx, id)
 	if err != nil {
@@ -46,10 +73,46 @@ func (b *BlogService) GetUser(ctx context.Context, id int) (model.User, error) {
 	return user, nil
 }
 
+func (b *BlogService) GetPost(ctx context.Context, id int) (model.Post, error) {
+	post, err := b.blogManager.GetPost(ctx, id)
+	if err != nil {
+		return model.Post{}, fmt.Errorf("error repo.GetPost: %w", err)
+	}
+
+	return post, nil
+}
+
+func (b *BlogService) GetPosts(ctx context.Context) ([]model.Post, error) {
+	posts, err := b.blogManager.GetPosts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("service.GetPosts: %w", err)
+	}
+
+	return posts, nil
+}
+
+func (b *BlogService) GetCommentsByPostId(ctx context.Context, post_id int) ([]model.Comment, error) {
+	comments, err := b.blogManager.GetCommentsByPostId(ctx, post_id)
+	if err != nil {
+		return nil, fmt.Errorf("service GetCommentsByPostId: %w", err)
+	}
+
+	return comments, nil
+}
+
 func (b *BlogService) GetUsers(ctx context.Context) ([]model.User, error) {
 	users, err := b.blogManager.GetUsers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("service.GetUsers: %w", err)
 	}
 	return users, nil
+}
+
+func (b *BlogService) GetPostsByUserID(ctx context.Context, userId int) ([]model.Post, error) {
+	posts, err := b.blogManager.GetPostsByUserID(ctx, userId)
+	if err != nil {
+		return nil, fmt.Errorf("error repo GetPostsByUserID: %w", err)
+	}
+
+	return posts, nil
 }

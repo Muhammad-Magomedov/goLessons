@@ -36,7 +36,16 @@ func main() {
 	}))
 
 	r.GET("/user/:id", blogHandler.GetUser)
-	r.POST("/user", blogHandler.CreateUser)
+	r.GET("/user/:id/posts", blogHandler.GetPostsByUserID)
 	r.GET("/users", blogHandler.GetUsers)
+	r.POST("/user", blogHandler.CreateUser)
+
+	r.GET("/posts", blogHandler.GetPosts)
+	r.GET("/post/:id", blogHandler.GetPost)
+	r.GET("/post/:id/comments", blogHandler.GetCommentsByPostId)
+	r.POST("/posts/:id", blogHandler.CreatePost)
+
+	r.POST("/comments/:userId/:id", blogHandler.CreateComment)
+
 	r.Run(":8080")
 }
