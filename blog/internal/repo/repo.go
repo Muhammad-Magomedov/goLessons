@@ -14,6 +14,12 @@ type CreateComment struct {
 	Body   string `json:"body"`
 }
 
+type CreatePost struct {
+	UserId int    `json:"user_id"`
+	Title  string `json:"title"`
+	Body   string `json:"body"`
+}
+
 type CreateUser struct {
 	Name           string
 	HashedPassword string
@@ -37,13 +43,17 @@ func New(db *pgx.Conn) *Repository {
 	}
 }
 
-func (r *Repository) CreatePost(ctx context.Context, user_id int, title string, body string) (string, error) {
-	_, err := r.db.Exec(ctx, "insert into posts (user_id, title, body) VALUES ($1, $2, $3)", user_id, title, body)
+func (r *Repository) CreatePost(ctx context.Context, post CreatePost) error {
+	_, err := r.db.Exec(ctx, `
+	insert into posts
+	 (user_id, title, body)
+	  VALUES ($1, $2, $3)`,
+		&post.UserId, &post.Title, &post.Body)
 	if err != nil {
-		return "", fmt.Errorf("error in CreatePost: %w", err)
+		return fmt.Errorf("error in CreatePost: %w", err)
 	}
 
-	return "Пост успешно создан", nil
+	return nil
 }
 
 func (r *Repository) GetPost(ctx context.Context, id int) (model.Post, error) {
@@ -75,6 +85,42 @@ func (r *Repository) GetPost(ctx context.Context, id int) (model.Post, error) {
 	}
 
 	return post, nil
+}
+
+func (r *Repository) GetPosts(ctx context.Context) ([]model.Post, error) {
+	var posts []model.Post
+	rows, err := r.db.Query(
+		ctx,
+		`select
+				id,
+				user_id,
+				title,
+				body,
+				views,
+				created_at,
+				updated_at
+		   from posts`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("repo.GetPosts: %w", err)
+	}
+
+	for rows.Next() {
+		var post model.Post
+		err := rows.Scan(&post.Id,
+			&post.UserId,
+			&post.Title,
+			&post.Body,
+			&post.Views,
+			&post.CreatedAt,
+			&post.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("repo.GetPosts scan: %w", err)
+		}
+		posts = append(posts, post)
+	}
+
+	return posts, nil
 }
 
 func (r *Repository) RemovePost(ctx context.Context, id int) (string, error) {
@@ -128,7 +174,6 @@ func (r *Repository) GetUsers(ctx context.Context) ([]model.User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("repo.GetUsers: %w", err)
 	}
-	defer rows.Close()
 
 	var users []model.User
 	for rows.Next() {
@@ -224,7 +269,6 @@ func (r *Repository) RemoveComment(ctx context.Context, id int) (string, error) 
 	return "Комментарий удалён", nil
 }
 
-// TODO: type UpdateComment struct {}
 func (r *Repository) UpdateComment(ctx context.Context, id int, comment UpdateComment) (string, error) {
 	var updatedComment UpdateComment
 	err := r.db.QueryRow(ctx, "update comments set body=coalesce($1, body) where id=$2 returning id, body", comment.Body, id).Scan(&updatedComment.Body, &updatedComment.Id)
@@ -234,12 +278,38 @@ func (r *Repository) UpdateComment(ctx context.Context, id int, comment UpdateCo
 	return "Комментарий обновлён", nil
 }
 
-func (r *Repository) GetComment(ctx context.Context, id int) (model.Comment, error) {
-	var comment model.Comment
-	err := r.db.QueryRow(ctx, "select id, user_id, post_id, body, created_at, updated_at from comments where id=$1", id).
-		Scan(&comment.Id, &comment.UserId, &comment.PostId, &comment.Body, &comment.CreatedAt, &comment.UpdatedAt)
+func (r *Repository) GetCommentsByPostId(ctx context.Context, postId int) ([]model.Comment, error) {
+	rows, err := r.db.Query(ctx, "select id, user_id, post_id, body, created_at, updated_at from comments where post_id=$1", postId)
 	if err != nil {
-		return model.Comment{}, fmt.Errorf("error in GetComment: %w", err)
+		return nil, fmt.Errorf("repo.GetUsers: %w", err)
 	}
-	return comment, nil
+
+	var comments []model.Comment
+	for rows.Next() {
+		var comment model.Comment
+		err := rows.Scan(&comment.Id, &comment.UserId, &comment.PostId, &comment.Body, &comment.CreatedAt, &comment.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("repo.GetComments scan: %w", err)
+		}
+		comments = append(comments, comment)
+	}
+	return comments, nil
+}
+
+func (r *Repository) GetPostsByUserID(ctx context.Context, userId int) ([]model.Post, error) {
+	rows, err := r.db.Query(ctx, "select id, user_id, title, body, views, created_at, updated_at from posts where user_id=$1", userId)
+	if err != nil {
+		return nil, fmt.Errorf("repo.GetUsers: %w", err)
+	}
+
+	var posts []model.Post
+	for rows.Next() {
+		var post model.Post
+		err := rows.Scan(&post.Id, &post.UserId, &post.Title, &post.Body, &post.Views, &post.CreatedAt, &post.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("repo.GetPostsByUserID scan: %w", err)
+		}
+		posts = append(posts, post)
+	}
+	return posts, nil
 }

@@ -35,3 +35,12 @@ type CreateUserReq struct {
 	Password string `json:"password"`
 	Email    string `json:"email"`
 }
+
+type CreatePostReq struct {
+	Title string `json:"title"`
+	Body  string `json:"body"`
+}
+
+type CreateCommentReq struct {
+	Body string `json:"body"`
+}
